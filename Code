@@ -1,0 +1,232 @@
+
+##### author: Shadow
+##### Import Packages
+
+### Before web-scraping: 
+### To work with Selenium in case your PC is intel core i3 or doesnt have windows profesional;in other case, use Docker.  
+### Match Java with R to use Selenium.
+### Follow the next steps:
+
+##### Before to execute this section, this 4 step are manually:
+##### (1) Donwload Selenium from 'https://www.selenium.dev/downloads/' (jar selenium-server-standalone-3.141.59)
+##### (2) Donwload exe file from "https://github.com/mozilla/geckodriver/releases", for FIREFOX 
+##### (3) Open cmd.exe of OS. 
+##### (4) On cmd define folder where there is file of 
+#####     Put 
+#####     java -Dwebdriver.gecko.driver="C:\Program Files\Selenium\geckodriver-v0.26.0-win64\geckodriver.exe" -jar selenium-server-standalone-3.141.59.jar 
+
+#### Then
+install.packages("pkgbuild") ### Install this package
+### Define path of Rtools package
+Sys.getenv("PATH")           
+writeLines('PATH="${RTOOLS40_HOME}/usr/bin;${PATH}"', con = "~/.Renviron")
+Sys.which("make")
+install.packages('rJava') ### Install package of Java
+Sys.setenv(JAVA_HOME='C:/Program Files/Java/jre1.8.0_251') # Define the path of Java for 64-bit version
+install.packages("RSelenium") ### Install packages of Selenium to manage the websites
+install.packages('rvest')     ### rvest to get html code.
+install.packages("tidyverse")
+
+##### Packages for Map graph:
+install.packages("sf")
+install.packages("tmap")
+install.packages("tmaptools")
+install.packages("leaflet")
+install.packages('rgeos')
+devtools::install_github("ropensci/rnaturalearthhires") ### This is importat to get parameters of the maps. 
+
+####Import Libraries
+library(tidyverse)
+library(getURL)
+library(readxl)
+library(rJava)
+library(RSelenium)
+library(xml2)
+library(rvest)
+library(XML)
+library(methods)
+
+library(sf)
+library(ggplot2)
+library(tmap)
+library(tmaptools)
+library(leaflet)
+library(dplyr)
+library(rgeos)
+library(rnaturalearth)
+
+#### Begin code.
+##### Definition of direction
+input_folder_path <- 'C:/Users/hp/Google Drive/MINAGRI-Donwload/Graficos/Regions/input'
+output_folder_path <- 'C:/Users/hp/Google Drive/MINAGRI-Donwload/Graficos/Regions/output'
+years = c("2014", "2015", "2016", "2017", "2018")
+
+##### Define webdriver 
+### Links to define firefox profile, it is important for manage donwload options:
+### http://www.seleniumframework.com/intermediate-tutorial/firefox-profile/
+### https://www.toolsqa.com/selenium-webdriver/how-to-download-files-using-selenium/
+
+for (i in years){
+  donwload_dir <- file.path(output_folder_path, 'donwload', i)           #### Define folder path to save 
+  url_year =  sprintf('http://apps5.mineco.gob.pe/transparencia/Mensual/default.aspx?y=%s&ap=ActProy', i) #### Define URL fo website.
+  dir.create(donwload_dir, showWarnings = FALSE)                         #### Create a folder to donwload. 
+  path_donwload= donwload_dir %>% str_replace_all("/", "\\\\\\\\")       #### Specify donwload path as input for makeFireFoxProfile 
+  ####Definition of firefox profile
+  fprof <- makeFirefoxProfile(list(browser.download.dir = path_donwload, #### Definition of download folder path  
+                                 browser.download.folderList = 2L, 
+                                 browser.helperApps.neverAsk.openFile = "text/csv,application/ms-excel,application/download", ### Type of file that will be donwload
+                                 browser.helperApps.neverAsk.saveToDisk="application/ms-excel,application/download" ### Type of file that will be donwload. There are many types, specify before run it
+                                 )
+                            )  
+  
+  remDr <- remoteDriver(        ##### Definition of web-driver
+    remoteServerAddr = "localhost",
+    port = 4444L,
+    browserName = "firefox",
+    version = "76.0.1",
+    extraCapabilities = fprof
+  )
+  remDr$open() #### Open webdriver
+  remDr$navigate( url_year ) ### Get inside webpage.
+  ads= remDr$getCurrentUrl() ### There are some problem to access in website.  
+  ads2 = strsplit(ads[[1]] , "&y")[[1]][1] ###  
+  remDr$navigate( ads2)      ### Get inside again
+  iframe = remDr$findElements("frame", using = "tag name")  ### Find frame
+  remDr$switchToFrame(iframe[[1]])                          ### Switch of frame
+  webElem <- remDr$findElement(using = "xpath", value = "//input[@id='ctl00_CPH1_BtnTipoGobierno']")  ### Get Selection of "Nivel" button
+  webElem$clickElement()                                                                              ### Click Button
+  webElem1 <- remDr$findElement(using = "xpath", value = "//input[@name='grp1']")                     ### Select the first option 
+  webElem1$clickElement()                                                                             ### Click the selected button  
+  webElem2 <- remDr$findElement(using = "xpath", value = "//input[@id='ctl00_CPH1_BtnSector']")       ### Select clickable button
+  webElem2$clickElement()
+  ##### Get peaces of HTML code   
+  hlink = html(remDr$getPageSource()[[1]])                                                            ### Use rvest to get html code. 
+  hlink = read_html(remDr$getPageSource()[[1]], encoding = "ISO-8859-1")                              ### Read html code
+  table_sectors <- hlink %>%  html_nodes(xpath = "//div[@id='ctl00_CPH1_UpdatePanel1']")              ### Select important codes
+  sector_selector <- table_sectors %>% html_nodes(xpath = "//input[@type='radio'][@name='grp1']")     ### Get imformation of clickable buttons
+  for (i in 1:length(sector_selector)){ 
+    clave <- html_attr(sector_selector[i],"onclick")
+    if ( grepl('grp1_clk(11)', clave, fixed = TRUE)  ) {
+      sector_agricolar <- clave
+      } 
+  }
+  value_sector = sprintf("//input[@name='grp1'][@onclick='%s']", sector_agricolar)                   #### Define xpath of agricultural sector
+  webElem3 <- remDr$findElement(using = "xpath", value = value_sector)                               #### Select agricultural sector
+  webElem3$clickElement()                                                                            #### Click on
+  webElem4 <- remDr$findElement(using = "xpath", value = "//input[@id='ctl00_CPH1_BtnDepartamentoMeta']") ### Select "Departamentos"
+  webElem4$clickElement()                                                                             ### Click on
+  webElem5 <- remDr$findElement(using = "xpath", value = "//a[@id='ctl00_CPH1_lbtnExportar']")        ### Select Export button
+  webElem5$clickElement()                                                                             ### Click on
+}
+######
+###### END OF FIRST PART: web-scraping
+######
+
+###########
+########### Second: Order DataBase
+###########
+
+######## Transform html tables to dataframe 
+List_content_file <- list()                #### Create a empty list
+for (i in 1:length(years)){                #### Start a loop for transform each table 
+  donwload_dir <- file.path(output_folder_path, 'donwload', years[i]) ### definition of file path
+  file_name_xls <-list.files(donwload_dir)                            ### list files in folder. 
+  for (jj in file_name_xls){                                          ### Loop to take just 'xls' files
+    if (  grepl("xls", jj, fixed=TRUE)  ){
+      file_name_xls1 <- jj
+     }
+  }  
+  file_path <- file.path( donwload_dir,  file_name_xls1)              ### Path of imported file
+  file_content<- read_html(file_path)                                 ### Read file as HTML
+  xml <- xmlParse( xml_child(xml_child(file_content, 2), 4))          ### Transfomr to XML
+  result <- xmlToDataFrame( xml )                                     ### Transform to dataframe
+  List_content_file[[i]] <- result                                    ### Save the output in list. 
+}
+
+######## Select relevant data: names of "departamentos" and values of "Girado" 
+
+for (i in 1:length(List_content_file)){
+  table = List_content_file[[i]]                          #### Get content of list 
+  last_column = dim(table)[2] - 1                         #### Define column of "Girado"
+  name_col <- table[1]                                    #### Define column of names of "Departementos"
+  girado_col <- table[last_column]                        #### GEt columns values
+  vector_departamento <- vector()                         #### Empty vector to save values of names
+  vector_Girado <- vector()                               #### Empty vector to save values of "Girado"
+  for (jj in 1:dim(name_col)[1]){                         #### Normalize data
+    departamento <- str_extract_all(name_col[jj,1], "[a-zA-Z]+") #### Extract just names
+    if (length(departamento[[1]])==1){                           ##### Conditional for names that contain many elements
+      vector_departamento[jj] <- departamento[[1]]
+    }else{
+      vector_departamento[[jj]] <- paste( departamento[[1]], collapse = ' ')
+    }
+    Girado <- str_extract_all(girado_col[jj,1], "[0-9]+")         #### Extract just values
+    vector_Girado[jj] <- as.integer(paste( Girado[[1]], collapse = ''))
+  } 
+  
+  D_df  <- as.data.frame(vector_departamento)             #### Transform vector of names to dataframe    
+  G_idf <- as.data.frame(vector_Girado)                   #### Transform vector of values to dataframe
+  Base_df<- cbind(D_df, G_idf)                            #### GAther names and values for the same ue 
+  year_name = 2013 + i                                    #### Name columns
+  year_name = sprintf( "Girado_%s", year_name  )
+  colnames(Base_df) <- c( "Departamento", year_name)
+  
+  #### Merge dfs in one
+  if(i==1){
+    Girado_base <- Base_df
+  }else{
+    Girado_base <- merge( x= Girado_base, y = Base_df, by.x="Departamento", by.y="Departamento" )
+  }
+}
+
+########## Generate a Mean of budget years: 
+Girado_base <- Girado_base %>% rowwise() %>% mutate( mean_years = mean(c(Girado_2014 , Girado_2015,Girado_2016,Girado_2017,Girado_2018)) ) ### Add mean column
+Girado_base_means<- Girado_base %>% select( Departamento, mean_years )   ### Select mean value, and names.
+
+######################
+###################### MAP GRAPH
+######################
+
+####### Use rnaturalearth to create a map.
+
+####### List states of Peru
+states_peru <- ne_states(country = "peru", returnclass = "sf") #### Define dataset from rnaturelearthhires
+state_particular <- states_peru %>% select(  name, iso_3166_2 , geometry) #### Select variables, name and geometry(which contain the main input to graph the map)
+state_particular <- state_particular %>% filter(  name!='Lima Province') #### Filter name 
+
+simpleCap <- function(x) {   ### DEfinie a function to change upper to lower case.
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), tolower(substring(s, 2)),
+        sep="", collapse=" ")
+}
+
+#### Modify content of input that will be graphed.
+vector_name = vector()
+vector_girad = vector()
+for (i in 1:dim(Girado_base_means)[1] ){
+  departamentos_names <- as.data.frame(Girado_base_means[1])
+  departamentos_girad <- as.data.frame(Girado_base_means[2])
+  name_value <- simpleCap(departamentos_names[i,])
+  girad_value <- round(departamentos_girad[i,]/1000000)
+  vector_name[i] <- name_value
+  vector_girad[i] <- girad_value
+  }
+#### Change names.
+names <- c("Apur.+" = "Apurímac", "Huanuco" = "Huánuco", "Junin" = "Junín", 
+           "San Martin" = "San Martín", "Provincia Constitucional Del Callao"="Callao",
+           "Madre De Dios"="Madre de Dios", "Ancash"="Áncash")
+vector_name <- str_replace_all(vector_name, names)
+#### Final input
+Final_data <- cbind( as.data.frame(vector_name), as.data.frame(vector_girad)   )
+colnames(Final_data) <- c("Departamento", "Girado")
+Final_data <- merge(x=Final_data, y=state_particular, by.x="Departamento", by.y="name" ) #### Imformation map with parameters that contain information
+
+Final_data <- Final_data %>% filter(  Departamento!='Lima' )            #### Avoid some region
+Final_data <- Final_data %>% filter(  Departamento!='Callao' )          #### Avoid some region
+
+ggplot(Final_data, aes (geometry = geometry)) +                         ### Finally, graph the map.
+  geom_sf(aes(fill = Girado)) + 
+  scale_fill_gradient(low = "#F6F8FA", high = "#20C9C6")
+
+######
+###### End of Code.
+######
